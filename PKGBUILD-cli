@@ -87,7 +87,6 @@ package_shelly-cli() {
     'gnupg'
     'libarchive'
     'pacman'
-    'sudo'
   )
   optdepends=(
     'base-devel: build and install AUR packages'
@@ -96,8 +95,11 @@ package_shelly-cli() {
     'fuse2: run AppImages that require FUSE 2'
     'shelly-cli-flatpak-backend: Flatpak package management support'
     'gtk-update-icon-cache: update AppImage icons'
-    'opendoas: alternative privilege elevator to sudo'
+    'opendoas: privilege helper'
     'plocate: locate-based pacfile discovery'
+    'polkit: authentication for run0 and pkexec'
+    'sudo: privilege helper'
+    'systemd>=256: run0 privilege helper'
     'util-linux: isolate fresh-root provisioning for --isolated builds'
     'vim: default visual pacfile diff viewer'
   )

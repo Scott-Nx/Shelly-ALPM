@@ -114,7 +114,6 @@ package_shelly-git() {
       'pacman'
       'gtk4'
       'glib2'
-      'sudo'
       'tar'
       'bash'
       'git'
@@ -128,6 +127,10 @@ package_shelly-git() {
       'json-glib'
   )
   optdepends=(
+      'sudo: privilege helper'
+      'opendoas: privilege helper'
+      'systemd>=256: run0 privilege helper'
+      'polkit: authentication for run0 and pkexec'
       'fish: Fish shell completions'
       'zsh: Zsh shell completions'
       'libstarfish: dependency viewer for arch packages'
