@@ -19,7 +19,7 @@ fn run(init: std.process.Init) !void {
             init.io,
             init.arena.allocator(),
             args,
-            init.environ_map.get("PATH").?,
+            init.environ_map,
             opts.init_path,
             stdout,
         ),
@@ -27,7 +27,7 @@ fn run(init: std.process.Init) !void {
             init.io,
             init.arena.allocator(),
             args,
-            init.environ_map.get("PATH").?,
+            init.environ_map,
             opts.gpgdir,
             stdout,
         ) catch |err| switch (err) {
@@ -86,7 +86,7 @@ fn run(init: std.process.Init) !void {
             init.io,
             init.arena.allocator(),
             args,
-            init.environ_map.get("PATH").?,
+            init.environ_map,
             opts.gpgdir,
             opts.key_ids,
             stdout,
@@ -110,7 +110,7 @@ fn run(init: std.process.Init) !void {
             init.io,
             init.arena.allocator(),
             args,
-            init.environ_map.get("PATH").?,
+            init.environ_map,
             opts.gpgdir,
             opts.key_ids,
             opts.keyserver,
@@ -131,7 +131,7 @@ fn run(init: std.process.Init) !void {
             init.io,
             init.arena.allocator(),
             args,
-            init.environ_map.get("PATH").?,
+            init.environ_map,
             opts.gpgdir,
             opts.key_ids,
             opts.keyserver,
@@ -237,8 +237,8 @@ pub fn main(init: std.process.Init) !void {
             stderrPrint(init.io, "An option requires a value. See shelly-key --help for usage.", .{});
             std.process.exit(1);
         },
-        error.NoElevator => {
-            stderrPrint(init.io, "Could not request administrator privileges because no authorization helper is installed. Install or configure sudo, doas, or pkexec.", .{});
+        error.NoElevator, error.UnsupportedElevator, error.ElevatorUnavailable, error.ElevatorOperationUnsupported => {
+            stderrPrint(init.io, "{s}", .{@import("diagnostics").cause(err)});
             std.process.exit(1);
         },
         error.ExecFailed => {

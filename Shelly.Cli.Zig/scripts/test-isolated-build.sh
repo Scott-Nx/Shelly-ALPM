@@ -186,9 +186,9 @@ for mask in 0022 0007 0027 0077; do
   mkdir "$case_dir"
   # %q preserves literal paths and arguments in the generated shell wrapper.
   printf '#!/usr/bin/env bash\nexec /usr/bin/sudo -n /bin/bash %q %q "$@"\n' \
-    "$fixture_dir/root-wrapper" "$mask" >"$case_dir/elevator"
-  chmod 0755 "$case_dir/elevator"
-  SHELLY_ELEVATOR="$case_dir/elevator" "$shelly_bin" build \
+    "$fixture_dir/root-wrapper" "$mask" >"$case_dir/sudo"
+  chmod 0755 "$case_dir/sudo"
+  SHELLY_ELEVATOR="$case_dir/sudo" "$shelly_bin" build \
     --isolated \
     --sync-deps \
     --review-digest "$review_digest" \

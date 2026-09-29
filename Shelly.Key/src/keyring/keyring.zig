@@ -41,11 +41,11 @@ pub fn init(
     io: Io,
     allocator: std.mem.Allocator,
     args: []const []const u8,
-    path_env: []const u8,
+    environment: *const std.process.Environ.Map,
     keyring_path: []const u8,
     out: *Io.Writer,
 ) !void {
-    try elevate.ensureRoot(io, allocator, args, path_env);
+    try elevate.ensureRoot(io, allocator, args, environment);
 
     const base: std.Io.Dir = .cwd();
 
@@ -85,11 +85,11 @@ pub fn updatedb(
     io: Io,
     allocator: std.mem.Allocator,
     args: []const []const u8,
-    path_env: []const u8,
+    environment: *const std.process.Environ.Map,
     gpgdir: []const u8,
     stdout: *Io.Writer,
 ) !void {
-    try elevate.ensureRoot(io, allocator, args, path_env);
+    try elevate.ensureRoot(io, allocator, args, environment);
 
     try stdout.print("Updating trust database...\n", .{});
     try stdout.flush();
@@ -141,12 +141,12 @@ pub fn lsignKey(
     io: Io,
     allocator: std.mem.Allocator,
     args: []const []const u8,
-    path_env: []const u8,
+    environment: *const std.process.Environ.Map,
     gpgdir: []const u8,
     key_ids: []const []const u8,
     stdout: *Io.Writer,
 ) !void {
-    try elevate.ensureRoot(io, allocator, args, path_env);
+    try elevate.ensureRoot(io, allocator, args, environment);
 
     if (key_ids.len == 0) return error.NoTargetsSpecified;
 
@@ -188,14 +188,14 @@ pub fn recvKeys(
     io: Io,
     allocator: std.mem.Allocator,
     args: []const []const u8,
-    path_env: []const u8,
+    environment: *const std.process.Environ.Map,
     gpgdir: []const u8,
     key_ids: []const []const u8,
     keyserver: ?[]const u8,
     user_mode: bool,
     stdout: *Io.Writer,
 ) !void {
-    if (!user_mode) try elevate.ensureRoot(io, allocator, args, path_env);
+    if (!user_mode) try elevate.ensureRoot(io, allocator, args, environment);
 
     if (key_ids.len == 0) return error.NoTargetsSpecified;
 
@@ -215,14 +215,14 @@ pub fn refreshKeys(
     io: Io,
     allocator: std.mem.Allocator,
     args: []const []const u8,
-    path_env: []const u8,
+    environment: *const std.process.Environ.Map,
     gpgdir: []const u8,
     key_ids: []const []const u8,
     keyserver: ?[]const u8,
     user_mode: bool,
     stdout: *Io.Writer,
 ) !void {
-    if (!user_mode) try elevate.ensureRoot(io, allocator, args, path_env);
+    if (!user_mode) try elevate.ensureRoot(io, allocator, args, environment);
 
     const gpg_cli: gpg.Gpg = .{ .io = io, .homedir = if (user_mode) null else gpgdir };
 
@@ -267,7 +267,7 @@ pub fn populate(
     requested: []const []const u8,
     stdout: *Io.Writer,
 ) !void {
-    try elevate.ensureRoot(io, allocator, args, env_map.get("PATH").?);
+    try elevate.ensureRoot(io, allocator, args, env_map);
 
     const base: std.Io.Dir = .cwd();
 

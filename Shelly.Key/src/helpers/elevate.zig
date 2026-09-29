@@ -1,79 +1,56 @@
 const std = @import("std");
+const privilege = @import("privilege");
 
-pub const ElevateError = error{
-    NoElevator,
-    ExecFailed,
-};
+const ElevatedCommand = struct {
+    provider: privilege.Provider,
+    executable: []u8,
+    argv: []const []const u8,
 
-const Elevator = enum {
-    sudo,
-    doas,
-    pkexec,
+    fn deinit(self: ElevatedCommand, allocator: std.mem.Allocator) void {
+        allocator.free(self.argv);
+        self.provider.deinit(allocator);
+        allocator.free(self.executable);
+    }
 };
 
 pub fn ensureRoot(
     io: std.Io,
     allocator: std.mem.Allocator,
     args: []const []const u8,
-    path_env: []const u8,
+    environment: *const std.process.Environ.Map,
 ) !void {
-    const uid = std.os.linux.getuid();
-    if (uid == 0) return;
+    if (std.os.linux.getuid() == 0) return;
 
-    const elevator = findElevator(io, allocator, path_env) orelse return error.NoElevator;
-
-    const exe = try std.process.executablePathAlloc(io, allocator);
-    defer allocator.free(exe);
-
-    const new_args = try buildElevatedCmd(allocator, elevator, exe, args);
-    defer allocator.free(new_args);
-
+    const command = try buildElevatedCommand(io, allocator, args, environment);
+    defer command.deinit(allocator);
     var child = try std.process.spawn(io, .{
-        .argv = new_args,
+        .argv = command.argv,
         .stdin = .inherit,
         .stdout = .inherit,
         .stderr = .inherit,
     });
     errdefer child.kill(io);
-
-    const term = try child.wait(io);
-    try handleTerm(term);
+    try handleTerm(try child.wait(io));
 }
 
-fn findElevator(io: std.Io, allocator: std.mem.Allocator, path_env: []const u8) ?Elevator {
-    const binaries = std.meta.fieldNames(Elevator);
-
-    var it = std.mem.splitScalar(u8, path_env, ':');
-    while (it.next()) |path| {
-        if (path.len == 0) continue;
-        for (binaries, 0..) |bin, i| {
-            const full_path = std.fs.path.join(allocator, &.{ path, bin }) catch continue;
-            defer allocator.free(full_path);
-            std.Io.Dir.accessAbsolute(io, full_path, .{}) catch continue;
-            return @enumFromInt(i);
-        }
-    }
-    return null;
-}
-
-fn buildElevatedCmd(
+fn buildElevatedCommand(
+    io: std.Io,
     allocator: std.mem.Allocator,
-    elevator: Elevator,
-    exe_path: []const u8,
     args: []const []const u8,
-) ![][]const u8 {
-    var list: std.ArrayList([]const u8) = .empty;
-    errdefer list.deinit(allocator);
-    try list.append(allocator, @tagName(elevator));
-    try list.append(allocator, exe_path);
-    for (args[1..]) |arg| try list.append(allocator, arg);
-    return list.toOwnedSlice(allocator);
+    environment: *const std.process.Environ.Map,
+) !ElevatedCommand {
+    const provider = try privilege.select(allocator, io, environment, .elevate_root);
+    errdefer provider.deinit(allocator);
+    const executable = try std.process.executablePathAlloc(io, allocator);
+    errdefer allocator.free(executable);
+    const arguments = if (args.len > 0) args[1..] else args;
+    const argv = try privilege.buildRootCommand(allocator, provider, executable, arguments);
+    return .{ .provider = provider, .executable = executable, .argv = argv };
 }
 
-fn handleTerm(term: std.process.Child.Term) ElevateError!noreturn {
+fn handleTerm(term: std.process.Child.Term) error{ExecFailed}!noreturn {
     switch (term) {
         .exited => |code| std.process.exit(code),
-        // Mirror the shell convention of 128 + signum for signal termination.
         .signal => |sig| std.process.exit(@truncate(128 + @intFromEnum(sig))),
         .stopped => |sig| {
             std.log.err("The authorization helper was stopped by signal {0f}. Retry the operation if it was interrupted unintentionally.", .{@import("diagnostics").safe(@tagName(sig))});
@@ -86,142 +63,40 @@ fn handleTerm(term: std.process.Child.Term) ElevateError!noreturn {
     }
 }
 
-const testing = std.testing;
-
-fn createFakeBinary(dir: std.Io.Dir, io: std.Io, name: []const u8) !void {
-    var f = try dir.createFile(io, name, .{});
-    f.close(io);
+fn createExecutable(dir: std.Io.Dir, io: std.Io, name: []const u8) !void {
+    var fixture = try dir.createFile(io, name, .{ .permissions = .executable_file });
+    fixture.close(io);
 }
 
-test "findElevator returns null for an empty PATH" {
-    try testing.expectEqual(
-        @as(?Elevator, null),
-        findElevator(testing.io, testing.allocator, ""),
+test "shelly-key builds direct run0 elevation through shared provider policy" {
+    var temporary = std.testing.tmpDir(.{});
+    defer temporary.cleanup();
+    try createExecutable(temporary.dir, std.testing.io, "run0");
+    const path = try temporary.dir.realPathFileAlloc(std.testing.io, ".", std.testing.allocator);
+    defer std.testing.allocator.free(path);
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    var environment = std.process.Environ.Map.init(arena.allocator());
+    try environment.put("PATH", path);
+
+    const command = try buildElevatedCommand(
+        std.testing.io,
+        arena.allocator(),
+        &.{ "shelly-key", "--init" },
+        &environment,
     );
+    defer command.deinit(arena.allocator());
+    try std.testing.expectEqualStrings(try std.fs.path.join(arena.allocator(), &.{ path, "run0" }), command.argv[0]);
+    try std.testing.expectEqualStrings("--init", command.argv[2]);
 }
 
-test "findElevator returns null when PATH has no elevator" {
-    var tmp = testing.tmpDir(.{ .iterate = true });
-    defer tmp.cleanup();
-
-    const path_env = try tmp.dir.realPathFileAlloc(testing.io, ".", testing.allocator);
-    defer testing.allocator.free(path_env);
-
-    try testing.expectEqual(
-        @as(?Elevator, null),
-        findElevator(testing.io, testing.allocator, path_env),
+test "shelly-key returns common NoElevator for empty PATH" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    var environment = std.process.Environ.Map.init(arena.allocator());
+    try environment.put("PATH", "");
+    try std.testing.expectError(
+        error.NoElevator,
+        buildElevatedCommand(std.testing.io, arena.allocator(), &.{"shelly-key"}, &environment),
     );
-}
-
-test "findElevator finds sudo" {
-    var tmp = testing.tmpDir(.{ .iterate = true });
-    defer tmp.cleanup();
-    try createFakeBinary(tmp.dir, testing.io, "sudo");
-
-    const path_env = try tmp.dir.realPathFileAlloc(testing.io, ".", testing.allocator);
-    defer testing.allocator.free(path_env);
-
-    try testing.expectEqual(
-        @as(?Elevator, .sudo),
-        findElevator(testing.io, testing.allocator, path_env),
-    );
-}
-
-test "findElevator finds doas" {
-    var tmp = testing.tmpDir(.{ .iterate = true });
-    defer tmp.cleanup();
-    try createFakeBinary(tmp.dir, testing.io, "doas");
-
-    const path_env = try tmp.dir.realPathFileAlloc(testing.io, ".", testing.allocator);
-    defer testing.allocator.free(path_env);
-
-    try testing.expectEqual(
-        @as(?Elevator, .doas),
-        findElevator(testing.io, testing.allocator, path_env),
-    );
-}
-
-test "findElevator picks the first matching directory in PATH" {
-    var tmp_empty = testing.tmpDir(.{ .iterate = true });
-    defer tmp_empty.cleanup();
-    var tmp_doas = testing.tmpDir(.{ .iterate = true });
-    defer tmp_doas.cleanup();
-    try createFakeBinary(tmp_doas.dir, testing.io, "doas");
-
-    const first = try tmp_empty.dir.realPathFileAlloc(testing.io, ".", testing.allocator);
-    defer testing.allocator.free(first);
-    const second = try tmp_doas.dir.realPathFileAlloc(testing.io, ".", testing.allocator);
-    defer testing.allocator.free(second);
-
-    const path_env = try std.fmt.allocPrint(testing.allocator, "{s}:{s}", .{ first, second });
-    defer testing.allocator.free(path_env);
-
-    try testing.expectEqual(
-        @as(?Elevator, .doas),
-        findElevator(testing.io, testing.allocator, path_env),
-    );
-}
-
-test "findElevator skips empty PATH segments" {
-    var tmp = testing.tmpDir(.{ .iterate = true });
-    defer tmp.cleanup();
-    try createFakeBinary(tmp.dir, testing.io, "pkexec");
-
-    const dir_path = try tmp.dir.realPathFileAlloc(testing.io, ".", testing.allocator);
-    defer testing.allocator.free(dir_path);
-
-    // Leading, middle, and trailing empty segments.
-    const path_env = try std.fmt.allocPrint(testing.allocator, "::{s}::", .{dir_path});
-    defer testing.allocator.free(path_env);
-
-    try testing.expectEqual(
-        @as(?Elevator, .pkexec),
-        findElevator(testing.io, testing.allocator, path_env),
-    );
-}
-
-test "buildElevatedCmd produces minimal command" {
-    const cmd = try buildElevatedCmd(
-        testing.allocator,
-        .sudo,
-        "/usr/bin/myapp",
-        &.{"myapp"},
-    );
-    defer testing.allocator.free(cmd);
-
-    try testing.expectEqualSlices(u8, cmd[0], "sudo");
-    try testing.expectEqualSlices(u8, cmd[1], "/usr/bin/myapp");
-    try testing.expectEqual(@as(usize, 2), cmd.len);
-}
-
-test "buildElevatedCmd forwards extra arguments" {
-    const cmd = try buildElevatedCmd(
-        testing.allocator,
-        .doas,
-        "/path/to/exe",
-        &.{ "prog", "--verbose", "--target", "/foo" },
-    );
-    defer testing.allocator.free(cmd);
-
-    try testing.expectEqual(@as(usize, 5), cmd.len);
-    try testing.expectEqualSlices(u8, cmd[0], "doas");
-    try testing.expectEqualSlices(u8, cmd[1], "/path/to/exe");
-    try testing.expectEqualSlices(u8, cmd[2], "--verbose");
-    try testing.expectEqualSlices(u8, cmd[3], "--target");
-    try testing.expectEqualSlices(u8, cmd[4], "/foo");
-}
-
-test "buildElevatedCmd skips args[0]" {
-    const cmd = try buildElevatedCmd(
-        testing.allocator,
-        .pkexec,
-        "/exe",
-        &.{ "myapp", "arg1" },
-    );
-    defer testing.allocator.free(cmd);
-
-    try testing.expectEqual(@as(usize, 3), cmd.len);
-    try testing.expectEqualSlices(u8, cmd[0], "pkexec");
-    try testing.expectEqualSlices(u8, cmd[1], "/exe");
-    try testing.expectEqualSlices(u8, cmd[2], "arg1");
 }

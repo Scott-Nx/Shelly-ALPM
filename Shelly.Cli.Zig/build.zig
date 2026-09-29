@@ -5,6 +5,10 @@ pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
     const diagnostics = b.dependency("shelly_diagnostics", .{ .target = target, .optimize = optimize }).module("diagnostics");
+    const privilege = b.dependency(
+        "shelly_privilege",
+        .{ .target = target, .optimize = optimize },
+    ).module("privilege");
     const flatpak_backend_path = b.option(
         []const u8,
         "flatpak-backend-path",
@@ -27,6 +31,7 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
     });
     cli.addImport("diagnostics", diagnostics);
+    cli.addImport("privilege", privilege);
     cli.addImport("Zigalpm", zigalpm);
     cli.addOptions("build_options", build_options);
 
@@ -97,6 +102,7 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
     });
     builder_test_module.addImport("diagnostics", diagnostics);
+    builder_test_module.addImport("privilege", privilege);
     builder_test_module.addImport("Zigalpm", zigalpm);
     builder_test_module.addOptions("build_options", build_options);
     const builder_tests = b.addTest(.{
@@ -131,6 +137,7 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
     });
     isolated_test_module.addImport("diagnostics", diagnostics);
+    isolated_test_module.addImport("privilege", privilege);
     isolated_test_module.addImport("Zigalpm", zigalpm);
     const isolated_tests = b.addTest(.{
         .name = "isolated-build-test",

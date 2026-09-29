@@ -2279,7 +2279,7 @@ test "install preserves actionable lock errors once in terminal and UI output" {
         const rendered = decoded_output.written();
         try std.testing.expectEqual(@as(usize, 1), std.mem.count(u8, rendered, "because the package database is locked"));
         try std.testing.expect(std.mem.indexOf(u8, rendered, "Lock file: /custom/package database/db.lck") != null);
-        try std.testing.expect(std.mem.indexOf(u8, rendered, "sudo rm -- '/custom/package database/db.lck'") != null);
+        try std.testing.expect(std.mem.indexOf(u8, rendered, "rm -- '/custom/package database/db.lck'") != null);
         try std.testing.expect(std.mem.indexOf(u8, rendered, "If no package manager is running") != null);
         try std.testing.expect(std.mem.indexOf(u8, rendered, "TransInitFailed") != null);
         try std.testing.expect(std.mem.indexOf(u8, rendered, "unexpected error") == null);

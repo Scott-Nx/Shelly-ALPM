@@ -243,7 +243,7 @@ test "failureMessage skips invalid and informational frames and owns the full ex
     const explanation = "Could not start the package operation because the package database is locked.\n\n" ++
         "Lock file: /custom/pacman/db.lck\n\n" ++
         "Wait for any running package manager to finish. If no package manager is running, remove the leftover lock file, then try again:\n" ++
-        "sudo rm -- '/custom/pacman/db.lck'";
+        "rm -- '/custom/pacman/db.lck'";
     const json = try std.json.Stringify.valueAlloc(alloc, .{ .@"$kind" = "alpm.error", .ErrorMessage = explanation }, .{});
     defer alloc.free(json);
     const encoded = try alloc.alloc(u8, std.base64.standard.Encoder.calcSize(json.len));

@@ -1,6 +1,7 @@
 const std = @import("std");
 const toml = @import("toml");
 const process_runner = @import("builder.zig");
+const privilege = @import("privilege");
 
 pub const system_path = "/etc/shellybuild.conf";
 pub const file_name = "shellybuild.conf";
@@ -299,9 +300,11 @@ pub fn resolveUserConfigurationPath(
     io: std.Io,
     environ: std.process.Environ,
 ) ![]u8 {
-    const elevated = environ.getPosix("SUDO_USER") != null or
-        environ.getPosix("DOAS_USER") != null or
-        environ.getPosix("PKEXEC_UID") != null;
+    var arena = std.heap.ArenaAllocator.init(allocator);
+    defer arena.deinit();
+    var environment = try environ.createMap(arena.allocator());
+    defer environment.deinit();
+    const elevated = privilege.hasInvokingUserMarker(&environment);
     if (!elevated) {
         if (environ.getPosix("XDG_CONFIG_HOME")) |xdg_config_home| {
             if (xdg_config_home.len != 0 and std.fs.path.isAbsolute(xdg_config_home))
@@ -397,9 +400,10 @@ pub fn validateEnvironmentAssignment(assignment: EnvironmentAssignment) !void {
         "CARCH",    "DISTCC_HOSTS", "SOURCE_DATE_EPOCH", "ENV",     "BASHOPTS", "SHELLOPTS", "IFS",
         "CDPATH",   "GCONV_PATH",   "LOCPATH",
     }, name)) return error.ReservedBuildEnvironmentVariable;
-    for ([_][]const u8{ "SHELLY_", "SUDO_", "DOAS_", "PKEXEC_", "XDG_", "DBUS_", "BASH_", "LD_", "DYLD_" }) |prefix| {
+    for ([_][]const u8{ "SHELLY_", "XDG_", "DBUS_", "BASH_", "LD_", "DYLD_" }) |prefix| {
         if (std.mem.startsWith(u8, name, prefix)) return error.ReservedBuildEnvironmentVariable;
     }
+    if (privilege.isProviderEnvironmentVariable(name)) return error.ReservedBuildEnvironmentVariable;
 }
 
 pub fn environmentErrorReason(err: anyerror) []const u8 {

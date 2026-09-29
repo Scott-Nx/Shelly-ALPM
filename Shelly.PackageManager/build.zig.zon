@@ -33,6 +33,7 @@
     // internet connectivity.
     .dependencies = .{
         .shelly_diagnostics = .{ .path = "../Shelly.Diagnostics" },
+        .shelly_privilege = .{ .path = "../Shelly.Privilege" },
         .shelly_http = .{
             .path = "../Shelly.Http",
         },

@@ -43,6 +43,12 @@ pub fn build(b: *std.Build) void {
     // set a preferred release mode, allowing the user to decide how to optimize.
     const optimize = b.standardOptimizeOption(.{});
     const diagnostics = b.dependency("shelly_diagnostics", .{ .target = target, .optimize = optimize }).module("diagnostics");
+    const privilege_dependency = b.dependency(
+        "shelly_privilege",
+        .{ .target = target, .optimize = optimize },
+    );
+    const user_account = privilege_dependency.module("user_account");
+    const privilege = privilege_dependency.module("privilege");
     const shelly_http = b.dependency("shelly_http", .{
         .target = target,
         .optimize = optimize,
@@ -76,13 +82,6 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
     });
     operation_context_mod.addImport("diagnostics", diagnostics);
-    const user_account_mod = b.createModule(.{
-        .root_source_file = b.path("src/shared/user_account.zig"),
-        .target = target,
-        .optimize = optimize,
-        .link_libc = true,
-    });
-    user_account_mod.addImport("diagnostics", diagnostics);
     const archive_mod = b.createModule(.{
         .root_source_file = b.path("src/shared/archive.zig"),
         .target = target,
@@ -117,7 +116,8 @@ pub fn build(b: *std.Build) void {
     mod.addImport("alpm_c", alpm_c);
     mod.addImport("archive", archive_mod);
     mod.addImport("operation_context", operation_context_mod);
-    mod.addImport("user_account", user_account_mod);
+    mod.addImport("user_account", user_account);
+    mod.addImport("privilege", privilege);
     mod.addImport("ShellyHttp", shelly_http.module("ShellyHttp"));
     mod.addImport("toml", toml_module);
     const package_options = b.addOptions();
@@ -304,7 +304,7 @@ pub fn build(b: *std.Build) void {
     const run_account_tests = b.addRunArtifact(account_tests);
     const account_test_step = b.step("user-account-test", "Test NSS account resolution and invoking-user build commands");
     account_test_step.dependOn(&run_account_tests.step);
-    const account_lookup_tests = b.addTest(.{ .root_module = user_account_mod });
+    const account_lookup_tests = b.addTest(.{ .root_module = user_account });
     const run_account_lookup_tests = b.addRunArtifact(account_lookup_tests);
     account_test_step.dependOn(&run_account_lookup_tests.step);
     test_step.dependOn(&run_account_lookup_tests.step);
@@ -327,7 +327,8 @@ pub fn build(b: *std.Build) void {
     shellybuild_test_module.addImport("diagnostics", diagnostics);
     shellybuild_test_module.addImport("toml", toml_module);
     shellybuild_test_module.addImport("operation_context", operation_context_mod);
-    shellybuild_test_module.addImport("user_account", user_account_mod);
+    shellybuild_test_module.addImport("user_account", user_account);
+    shellybuild_test_module.addImport("privilege", privilege);
     const shellybuild_tests = b.addTest(.{
         .name = "shellybuild-test",
         .root_module = shellybuild_test_module,

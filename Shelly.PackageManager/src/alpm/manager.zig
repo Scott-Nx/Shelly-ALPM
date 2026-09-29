@@ -5354,7 +5354,7 @@ test "handleErrorMessage emits the expected database lock error" {
 
     try testing.expect(std.mem.startsWith(u8, cap.text(), "Could not start the package operation because the package database is locked."));
     try testing.expect(std.mem.indexOf(u8, cap.text(), "Lock file: /var/lib/pacman/db.lck") != null);
-    try testing.expect(std.mem.indexOf(u8, cap.text(), "sudo rm -- '/var/lib/pacman/db.lck'") != null);
+    try testing.expect(std.mem.indexOf(u8, cap.text(), "rm -- '/var/lib/pacman/db.lck'") != null);
     try testing.expect(std.mem.indexOf(u8, cap.text(), "If no package manager is running") != null);
 }
 
@@ -5795,7 +5795,7 @@ test "database lock error uses the configured database directory" {
     _ = try mgr.dispatcher.addErrorHandler(.{ .function = captureError, .data = @ptrCast(&cap) });
     try mgr.handleErrorMessage(@intFromEnum(libalpm.Error.HandleLock), null);
     try testing.expect(std.mem.indexOf(u8, cap.text(), "Lock file: /custom/pacman database/db.lck") != null);
-    try testing.expect(std.mem.indexOf(u8, cap.text(), "sudo rm -- '/custom/pacman database/db.lck'") != null);
+    try testing.expect(std.mem.indexOf(u8, cap.text(), "rm -- '/custom/pacman database/db.lck'") != null);
     try testing.expect(std.mem.indexOf(u8, cap.text(), "/var/lib/pacman") == null);
 }
 

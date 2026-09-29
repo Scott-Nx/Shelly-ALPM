@@ -152,11 +152,13 @@ fn fixPermissions(
     invocation: *const parser.Invocation,
     runner: anytype,
 ) anyerror!u8 {
-    const user = try invokingUser(context) orelse {
+    const identity = (try elevation.invokingUser(context)) orelse {
         const message = "Could not identify the regular user whose Shelly directories need repair. Run this command from your regular user session and approve authorization when requested.";
         try writeResponseMessage(context, invocation, false, message);
         return 1;
     };
+    defer identity.deinit(context.allocator);
+    const user = identity.username;
 
     const paths = [_][]const u8{
         try std.fs.path.join(context.allocator, &.{ try xdg.configHome(context), "shelly" }),
@@ -251,40 +253,23 @@ fn runChown(
     };
 }
 
-fn invokingUser(context: *const runtime.RuntimeContext) !?[]const u8 {
-    const environment = context.environment orelse return null;
-    if (environment.get("SUDO_USER")) |user| {
-        if (validInvokingUser(user)) return user;
-    }
-    if (environment.get("DOAS_USER")) |user| {
-        if (validInvokingUser(user)) return user;
-    }
-    const uid = environment.get("PKEXEC_UID") orelse return null;
-    if (uid.len == 0) return null;
-    return try usernameForUid(context, uid);
-}
-
-fn validInvokingUser(user: []const u8) bool {
-    return user.len > 0 and !std.mem.eql(u8, user, "root");
-}
-
-fn usernameForUid(context: *const runtime.RuntimeContext, wanted_uid: []const u8) !?[]const u8 {
-    const account = (try user_account.byUidText(context.allocator, wanted_uid)) orelse return null;
-    defer account.deinit(context.allocator);
-    if (account.uid == 0 or !validInvokingUser(account.username)) return null;
-    return try context.allocator.dupe(u8, account.username);
-}
-
-test "NSS utility ownership lookup resolves UIDs and rejects root" {
+test "utility ownership lookup uses shared NSS caller identity" {
     var context: test_support.TestContext = .{};
     context.init();
     defer context.deinit();
     const allocator = context.context.allocator;
     const account = (try user_account.byName(allocator, "nobody")) orelse return error.SkipZigTest;
     const uid = try std.fmt.allocPrint(allocator, "{d}", .{account.uid});
-    try std.testing.expectEqualStrings(account.username, (try usernameForUid(&context.context, uid)).?);
-    try std.testing.expect(try usernameForUid(&context.context, "0") == null);
-    try std.testing.expect(try usernameForUid(&context.context, "invalid") == null);
+    var environment = std.process.Environ.Map.init(allocator);
+    try environment.put("PKEXEC_UID", uid);
+    context.context.environment = &environment;
+    const identity = (try elevation.invokingUser(&context.context)).?;
+    defer identity.deinit(allocator);
+    try std.testing.expectEqualStrings(account.username, identity.username);
+    try environment.put("PKEXEC_UID", "0");
+    try std.testing.expect(try elevation.invokingUser(&context.context) == null);
+    try environment.put("PKEXEC_UID", "invalid");
+    try std.testing.expect(try elevation.invokingUser(&context.context) == null);
 }
 
 fn parseInvocation(
@@ -393,8 +378,9 @@ test "permission repair targets only existing Shelly user directories" {
     try std.Io.Dir.cwd().createDirPath(std.testing.io, try std.fs.path.join(allocator, &.{ config_root, "shelly" }));
     try std.Io.Dir.cwd().createDirPath(std.testing.io, try std.fs.path.join(allocator, &.{ cache_root, "Shelly" }));
 
+    const account = (try user_account.byName(allocator, "nobody")) orelse return error.SkipZigTest;
     var environment = std.process.Environ.Map.init(allocator);
-    try environment.put("SUDO_USER", "tester");
+    try environment.put("SUDO_USER", account.username);
     try environment.put("XDG_CONFIG_HOME", config_root);
     try environment.put("XDG_CACHE_HOME", cache_root);
     try environment.put("XDG_DATA_HOME", data_root);
@@ -412,9 +398,10 @@ test "permission repair targets only existing Shelly user directories" {
     const invocation = try parseInvocation(allocator, &.{ "utility", "--fix-permissions" });
 
     const Capture = struct {
+        expected_user: []const u8,
         calls: usize = 0,
         fn run(self: *@This(), _: *runtime.RuntimeContext, user: []const u8, path: []const u8) !u8 {
-            try std.testing.expectEqualStrings("tester", user);
+            try std.testing.expectEqualStrings(self.expected_user, user);
             if (self.calls == 0)
                 try std.testing.expect(std.mem.endsWith(u8, path, "/config/shelly"))
             else
@@ -423,7 +410,7 @@ test "permission repair targets only existing Shelly user directories" {
             return 0;
         }
     };
-    var capture: Capture = .{};
+    var capture: Capture = .{ .expected_user = account.username };
     try std.testing.expectEqual(@as(u8, 0), try fixPermissions(
         &context,
         &invocation,

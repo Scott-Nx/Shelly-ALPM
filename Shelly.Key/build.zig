@@ -4,12 +4,17 @@ pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
     const diagnostics = b.dependency("shelly_diagnostics", .{ .target = target, .optimize = optimize }).module("diagnostics");
+    const privilege = b.dependency(
+        "shelly_privilege",
+        .{ .target = target, .optimize = optimize },
+    ).module("privilege");
 
     const mod = b.addModule("Shelly_Key", .{
         .root_source_file = b.path("src/root.zig"),
         .target = target,
     });
     mod.addImport("diagnostics", diagnostics);
+    mod.addImport("privilege", privilege);
 
     const exe = b.addExecutable(.{
         .name = "shelly-key",

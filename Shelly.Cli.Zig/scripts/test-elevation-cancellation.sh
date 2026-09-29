@@ -21,7 +21,7 @@ else
   shelly_bin=$SHELLY_BIN
 fi
 
-cat >"$fixture_dir/fake-elevator" <<'EOF'
+cat >"$fixture_dir/sudo" <<'EOF'
 #!/usr/bin/env bash
 set -uo pipefail
 test_dir=${SHELLY_ELEVATION_TEST_DIR:?}
@@ -41,7 +41,7 @@ worker_pid=$!
 printf '%s %s\n' "$$" "$worker_pid" >"$test_dir/ready"
 wait "$worker_pid"
 EOF
-chmod 0755 "$fixture_dir/fake-elevator"
+chmod 0755 "$fixture_dir/sudo"
 
 printf '%s\n' \
   'pkgname=elevation-cancel-fixture' \
@@ -54,7 +54,7 @@ run_case() {
   local signal=$1
   local case_dir="$fixture_dir/$signal"
   mkdir "$case_dir"
-  SHELLY_ELEVATOR="$fixture_dir/fake-elevator" \
+  SHELLY_ELEVATOR="$fixture_dir/sudo" \
     SHELLY_ELEVATION_TEST_DIR="$case_dir" \
     "$shelly_bin" build --isolated --json --no-confirm "$fixture_dir/PKGBUILD" \
     >"$case_dir/stdout" 2>"$case_dir/stderr" &

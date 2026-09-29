@@ -114,6 +114,6 @@ test "tray refresh targets the NSS invoking user after elevation and skips direc
         try std.testing.expectEqualStrings(bus, target.bus);
         try std.testing.expectEqual(account.uid, target.uid.?);
         try std.testing.expectEqual(account.gid, target.gid.?);
-        try environment.put(marker, "");
+        _ = environment.swapRemove(marker);
     }
 }

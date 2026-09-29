@@ -40,7 +40,7 @@ if [[ ${elevator##*/} == sudo ]]; then
   printf 'Authenticating sudo before starting the background cancellation test...\n' >&2
   "$elevator" -v
   sudo_path=$(command -v -- "$elevator")
-  test_elevator="$fixture_dir/sudo-noninteractive"
+  test_elevator="$fixture_dir/sudo"
   printf '#!/usr/bin/env bash\nexec %q -n "$@"\n' "$sudo_path" >"$test_elevator"
   chmod 0755 "$test_elevator"
 fi

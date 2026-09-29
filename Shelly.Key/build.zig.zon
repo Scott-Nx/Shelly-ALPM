@@ -5,6 +5,7 @@
     .minimum_zig_version = "0.16.0",
     .dependencies = .{
         .shelly_diagnostics = .{ .path = "../Shelly.Diagnostics" },
+        .shelly_privilege = .{ .path = "../Shelly.Privilege" },
     },
     .paths = .{
         "build.zig",

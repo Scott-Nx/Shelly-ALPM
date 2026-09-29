@@ -212,7 +212,10 @@ pub fn cause(err: anyerror) []const u8 {
         error.AuthorizationDenied => authorization_denied,
         error.ElevationFailed => "Could not request administrator privileges. Review the authorization helper output before retrying.",
         error.ElevationRequired => "Administrator privileges are required. Run Shelly from your regular user session and approve authorization when requested.",
-        error.NoElevator => "No authorization helper was found. Install or configure sudo, doas, or pkexec.",
+        error.NoElevator => "No automatic privilege helper was found. Install sudo, doas, or systemd 256 or newer (run0), or set SHELLY_ELEVATOR to an available helper (sudo, doas, run0, or pkexec).",
+        error.UnsupportedElevator => "SHELLY_ELEVATOR must name a supported privilege helper: sudo, doas, run0, or pkexec.",
+        error.ElevatorUnavailable => "The privilege helper configured in SHELLY_ELEVATOR is unavailable or not executable. Check its path and PATH.",
+        error.ElevatorOperationUnsupported => "The configured privilege helper does not support this operation. Use sudo, doas, or run0 to run a command as the invoking user.",
         error.InvokingUserUnavailable, error.CannotBuildAsRoot => "Could not identify a regular user to run the build. Start Shelly from your regular user session and approve authorization when requested.",
         error.AccessDenied, error.PermissionDenied => "Access was denied. Check that the invoking user has the required permissions for the selected files and directories.",
         error.NoSpaceLeft => "The destination has insufficient capacity. Check the filesystem space or the reported buffer limit before retrying.",
@@ -319,14 +322,14 @@ pub fn databaseLocked(allocator: std.mem.Allocator, database_path: []const u8) !
     var command: std.Io.Writer.Allocating = .init(allocator);
     defer command.deinit();
     // Quote the configured path as one shell argument, including embedded quotes.
-    try command.writer.writeAll("sudo rm -- '");
+    try command.writer.writeAll("rm -- '");
     for (path) |byte| {
         if (byte == '\'') try command.writer.writeAll("'\\''") else try command.writer.writeByte(byte);
     }
     try command.writer.writeByte('\'');
     return std.fmt.allocPrint(allocator, "Could not start the package operation because the package database is locked.\n\n" ++
         "Lock file: {s}\n\n" ++
-        "Wait for any running package manager to finish. If no package manager is running, remove the leftover lock file, then try again:\n{s}", .{ path, command.written() });
+        "Wait for any running package manager to finish. If no package manager is running, remove the leftover lock file as root with your configured privilege helper, then try again:\n{s}", .{ path, command.written() });
 }
 
 pub fn buildFailed(allocator: std.mem.Allocator, package: []const u8, stage: []const u8, exit_code: u8) ![]u8 {
@@ -337,8 +340,9 @@ test "lock instructions use and shell quote the configured database path" {
     const message = try databaseLocked(std.testing.allocator, "/tmp/Shelly's database/");
     defer std.testing.allocator.free(message);
     try std.testing.expect(std.mem.indexOf(u8, message, "Lock file: /tmp/Shelly's database/db.lck") != null);
-    try std.testing.expect(std.mem.indexOf(u8, message, "sudo rm -- '/tmp/Shelly'\\''s database/db.lck'") != null);
+    try std.testing.expect(std.mem.indexOf(u8, message, "rm -- '/tmp/Shelly'\\''s database/db.lck'") != null);
     try std.testing.expect(std.mem.indexOf(u8, message, "If no package manager is running") != null);
+    try std.testing.expect(std.mem.indexOf(u8, message, "sudo") == null);
 }
 
 test "unknown failures preserve diagnostics without inventing a cause" {

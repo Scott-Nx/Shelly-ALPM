@@ -17,6 +17,7 @@ Shelly is organized into several interconnected projects:
 | **Shelly.Http**                     | Standalone HTTP client and compatibility TLS implementation                                           |
 | **Shelly.PackageManager**           | Core libalpm/AUR/AppImage library and backend-neutral Flatpak facade                                  |
 | **Shelly.Flatpak.Backend**          | Optional ABI-versioned shared library containing generated libflatpak bindings and native operations  |
+| **Shelly.Privilege**                | Shared privilege-provider selection, command construction, and invoking-user identity                |
 | **Shelly.Utilities**                | Shared utility classes and extensions used across projects                                            |
 
 ## How Components Interact
@@ -30,7 +31,8 @@ Shelly is organized into several interconnected projects:
     ┌──────────────┐                  │                    ┌────────────────┐  
     │              │ ─────────────────┼─────────────────►  │                │  
     │ Shelly-Notif │                  ▼                    │   Shelly-CLI   │  
-    │              │  ◄─┐     ┌────────────────┐   sudo    │   (Terminal)   │  
+    │              │  ◄─┐     ┌────────────────┐  pkexec   │   (Terminal)   │
+    │              │    │     │                │  helper   │                │
     │              │    │d-bus│                │ ────────► │                │  
     └───────┬──────┘    └─────┤   Shelly-UI    │           └──────┬─────────┘  
             │    d-bus        │     (GTK)      │                  │            
@@ -54,7 +56,7 @@ Shelly is organized into several interconnected projects:
 
 ### Key Interactions
 
-1. **Shelly-UI ↔ Shelly-CLI**: The UI launches the CLI via `sudo` with `--ui-mode` flag for privileged operations (
+1. **Shelly-UI ↔ Shelly-CLI**: The UI launches the CLI through its authorization helper (currently pkexec) with `--ui-mode` for privileged operations (
    install, remove, upgrade). The CLI outputs structured frames that the UI parses for progress updates.
 
 2. **Shelly-CLI uses the PackageManager library for:
