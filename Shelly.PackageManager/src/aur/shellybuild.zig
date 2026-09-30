@@ -648,18 +648,24 @@ test "shellybuild resolves XDG path with HOME fallback" {
 }
 
 test "shellybuild elevated path ignores the coordinator XDG directory" {
-    var elevated_map = std.process.Environ.Map.init(std.testing.allocator);
+    const allocator = std.testing.allocator;
+    const account = (try @import("user_account").byName(allocator, "nobody")) orelse return error.SkipZigTest;
+    defer account.deinit(allocator);
+    try std.testing.expect(account.uid != 0);
+    var elevated_map = std.process.Environ.Map.init(allocator);
     defer elevated_map.deinit();
-    try elevated_map.put("HOME", "/home/invoker");
+    try elevated_map.put("HOME", "/home/coordinator");
     try elevated_map.put("XDG_CONFIG_HOME", "/root/custom-config");
-    try elevated_map.put("SUDO_USER", "shelly-test-user-not-in-passwd");
+    try elevated_map.put("SUDO_USER", account.username);
     const elevated_environ: std.process.Environ = .{
-        .block = try elevated_map.createPosixBlock(std.testing.allocator, .{}),
+        .block = try elevated_map.createPosixBlock(allocator, .{}),
     };
-    defer elevated_environ.block.deinit(std.testing.allocator);
-    const path = try resolveUserConfigurationPath(std.testing.allocator, std.testing.io, elevated_environ);
-    defer std.testing.allocator.free(path);
-    try std.testing.expectEqualStrings("/home/invoker/.config/shelly/shellybuild.conf", path);
+    defer elevated_environ.block.deinit(allocator);
+    const path = try resolveUserConfigurationPath(allocator, std.testing.io, elevated_environ);
+    defer allocator.free(path);
+    const expected = try std.fs.path.join(allocator, &.{ account.home, ".config", "shelly", file_name });
+    defer allocator.free(expected);
+    try std.testing.expectEqualStrings(expected, path);
 }
 
 test "shellybuild extra_path defaults and user replacement follow configuration precedence" {
